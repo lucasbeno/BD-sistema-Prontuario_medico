@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Prontuário Médico</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<aside class="menu">
+    <div class="marca">
+        <span class="marca-icone">+</span>
+        <div>
+            <strong>Prontuário</strong>
+            <small>Clínica Médica</small>
+        </div>
+    </div>
+    <nav>
+        <button data-aba="dashboard" class="ativo">Dashboard</button>
+        <button data-aba="pacientes">Pacientes</button>
+        <button data-aba="medicos">Médicos</button>
+        <button data-aba="convenios">Convênios</button>
+        <button data-aba="relatorios">Consultas SQL</button>
+    </nav>
+</aside>
+
+<main>
+    <section id="aba-dashboard" class="aba ativa">
+        <header class="topo">
+            <div>
+                <h1>Dashboard</h1>
+                <p>Indicadores e gráficos gerados a partir do banco <code>prontuario_medico</code>.</p>
+            </div>
+        </header>
+        <div class="kpis" id="kpis"></div>
+        <div class="graficos">
+            <figure class="cartao"><figcaption>Consultas por especialidade</figcaption><div class="canvas"><canvas id="g-especialidade"></canvas></div></figure>
+            <figure class="cartao"><figcaption>Pacientes com e sem convênio</figcaption><div class="canvas"><canvas id="g-convenio"></canvas></div></figure>
+            <figure class="cartao"><figcaption>Top 10 medicamentos prescritos</figcaption><div class="canvas"><canvas id="g-medicamentos"></canvas></div></figure>
+            <figure class="cartao"><figcaption>Top 10 exames solicitados</figcaption><div class="canvas"><canvas id="g-exames"></canvas></div></figure>
+            <figure class="cartao"><figcaption>Distribuição: nº de consultas por paciente</figcaption><div class="canvas"><canvas id="g-dist-consultas"></canvas></div></figure>
+            <figure class="cartao"><figcaption>Distribuição: nº de alergias por paciente</figcaption><div class="canvas"><canvas id="g-dist-alergias"></canvas></div></figure>
+        </div>
+    </section>
+
+    <section id="aba-pacientes" class="aba">
+        <header class="topo">
+            <div>
+                <h1>Pacientes</h1>
+                <p>Tabelas <code>pessoa</code> + <code>paciente</code> + <code>telefone</code>. O nº do prontuário é gerado por AUTO_INCREMENT.</p>
+            </div>
+            <button class="primario" data-novo="pacientes">+ Novo paciente</button>
+        </header>
+        <input class="busca" data-busca="pacientes" placeholder="Buscar paciente...">
+        <div class="tabela-wrap"><table id="tabela-pacientes"></table></div>
+    </section>
+
+    <section id="aba-medicos" class="aba">
+        <header class="topo">
+            <div>
+                <h1>Médicos</h1>
+                <p>Tabelas <code>pessoa</code> + <code>medico</code>. Especialidade vazia usa o DEFAULT “Clínica Geral”.</p>
+            </div>
+            <button class="primario" data-novo="medicos">+ Novo médico</button>
+        </header>
+        <input class="busca" data-busca="medicos" placeholder="Buscar médico...">
+        <div class="tabela-wrap"><table id="tabela-medicos"></table></div>
+    </section>
+
+    <section id="aba-convenios" class="aba">
+        <header class="topo">
+            <div>
+                <h1>Convênios</h1>
+                <p>Excluir um convênio deixa seus pacientes como particulares (<code>ON DELETE SET NULL</code>); alterar o código propaga para os pacientes (<code>ON UPDATE CASCADE</code>).</p>
+            </div>
+            <button class="primario" data-novo="convenios">+ Novo convênio</button>
+        </header>
+        <input class="busca" data-busca="convenios" placeholder="Buscar convênio...">
+        <div class="tabela-wrap"><table id="tabela-convenios"></table></div>
+    </section>
+
+    <section id="aba-relatorios" class="aba">
+        <header class="topo">
+            <div>
+                <h1>Consultas SQL</h1>
+                <p>Escolha uma consulta para executá-la no MySQL e ver o SQL e o resultado.</p>
+            </div>
+        </header>
+        <div class="relatorios">
+            <ol id="lista-relatorios"></ol>
+            <div id="resultado-relatorio" class="cartao vazio">Selecione uma consulta à esquerda.</div>
+        </div>
+    </section>
+</main>
+
+<dialog id="modal">
+    <form id="formulario" method="dialog">
+        <h2 id="modal-titulo"></h2>
+        <div id="modal-campos"></div>
+        <p class="erro" id="modal-erro"></p>
+        <div class="acoes">
+            <button type="button" id="modal-cancelar">Cancelar</button>
+            <button type="submit" class="primario">Salvar</button>
+        </div>
+    </form>
+</dialog>
+
+<div id="aviso" class="aviso"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
