@@ -11,7 +11,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -64,6 +66,49 @@ public final class Database {
         tabela.put("columns", colunas);
         tabela.put("rows", linhas);
         return tabela;
+    }
+
+    /** Liga os parâmetros (?) do comando, na ordem. null vira NULL no SQL. */
+    public static void ligar(PreparedStatement ps, List<?> parametros) throws SQLException {
+        for (int i = 0; i < parametros.size(); i++) {
+            Object valor = parametros.get(i);
+            if (valor == null) {
+                ps.setNull(i + 1, Types.NULL);
+            } else {
+                ps.setObject(i + 1, valor);
+            }
+        }
+    }
+
+    /** SELECT com parâmetros -> lista de linhas (coluna -> valor). */
+    public static List<Map<String, Object>> lista(Connection con, String sql, List<?> parametros) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ligar(ps, parametros);
+            return paraLista(ps);
+        }
+    }
+
+    public static List<Map<String, Object>> lista(String sql, Object... parametros) throws SQLException {
+        try (Connection con = getConnection()) {
+            return lista(con, sql, Arrays.asList(parametros));
+        }
+    }
+
+    /** SELECT com parâmetros -> {columns: [...], rows: [[...], ...]}. */
+    public static Map<String, Object> tabela(Connection con, String sql, List<?> parametros) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ligar(ps, parametros);
+            return paraTabela(ps);
+        }
+    }
+
+    /** INSERT / UPDATE / DELETE com parâmetros -> número de linhas afetadas. */
+    public static int executar(String sql, Object... parametros) throws SQLException {
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ligar(ps, Arrays.asList(parametros));
+            return ps.executeUpdate();
+        }
     }
 
     public static List<Map<String, Object>> paraLista(PreparedStatement ps) throws SQLException {

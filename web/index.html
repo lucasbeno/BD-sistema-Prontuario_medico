@@ -3,52 +3,219 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Prontuário Médico</title>
+    <title>VidaPlena — Prontuário Médico</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="lib/chart.umd.min.js"></script>
 </head>
 <body>
 <aside class="menu">
     <div class="marca">
         <span class="marca-icone">+</span>
         <div>
-            <strong>Prontuário</strong>
-            <small>Clínica Médica</small>
+            <strong>VidaPlena</strong>
+            <small>Prontuário Médico</small>
         </div>
     </div>
     <nav>
+        <small class="grupo">Análise</small>
         <button data-aba="dashboard" class="ativo">Dashboard</button>
+        <button data-aba="relatorios">Consultas e visões</button>
+        <button data-aba="regras">regras</button>
+        <small class="grupo">Cadastros (CRUD)</small>
         <button data-aba="pacientes">Pacientes</button>
         <button data-aba="medicos">Médicos</button>
+        <button data-aba="consultas">Consultas</button>
         <button data-aba="convenios">Convênios</button>
-        <button data-aba="relatorios">Consultas SQL</button>
+        <button data-aba="medicamentos">Medicamentos</button>
+        <button data-aba="exames">Exames</button>
     </nav>
 </aside>
 
 <main>
+    <!-- ============================== DASHBOARD ============================== -->
     <section id="aba-dashboard" class="aba ativa">
         <header class="topo">
             <div>
                 <h1>Dashboard</h1>
-                <p>Indicadores e gráficos gerados a partir do banco <code>prontuario_medico</code>.</p>
             </div>
         </header>
+
+        <div class="filtros" id="filtros-dashboard">
+            <label>De <input type="date" id="f-inicio"></label>
+            <label>Até <input type="date" id="f-fim"></label>
+            <div class="atalhos">
+                <button type="button" data-periodo="tudo">Tudo</button>
+                <button type="button" data-periodo="3">3 meses</button>
+                <button type="button" data-periodo="6">6 meses</button>
+                <button type="button" data-periodo="ano">2026</button>
+            </div>
+            <label>Especialidade <select id="f-especialidade"><option value="">Todas</option></select></label>
+            <label>Pagamento <select id="f-pagamento">
+                <option value="">Todos</option>
+                <option value="P">Particular</option>
+                <option value="C">Qualquer convênio</option>
+                <optgroup label="Convênio específico" id="f-convenios"></optgroup>
+            </select></label>
+            <label>Tipo <select id="f-tipo">
+                <option value="">Todas</option>
+                <option value="P">Primeira consulta</option>
+                <option value="R">Retorno</option>
+            </select></label>
+            <button type="button" class="btn" id="f-limpar">Limpar filtros</button>
+        </div>
+        <p class="filtro-resumo" id="filtro-resumo"></p>
+
         <div class="kpis" id="kpis"></div>
+        <p class="cadastro" id="cadastro"></p>
+
         <div class="graficos">
-            <figure class="cartao"><figcaption>Consultas por especialidade</figcaption><div class="canvas"><canvas id="g-especialidade"></canvas></div></figure>
-            <figure class="cartao"><figcaption>Pacientes com e sem convênio</figcaption><div class="canvas"><canvas id="g-convenio"></canvas></div></figure>
-            <figure class="cartao"><figcaption>Top 10 medicamentos prescritos</figcaption><div class="canvas"><canvas id="g-medicamentos"></canvas></div></figure>
-            <figure class="cartao"><figcaption>Top 10 exames solicitados</figcaption><div class="canvas"><canvas id="g-exames"></canvas></div></figure>
-            <figure class="cartao"><figcaption>Distribuição: nº de consultas por paciente</figcaption><div class="canvas"><canvas id="g-dist-consultas"></canvas></div></figure>
-            <figure class="cartao"><figcaption>Distribuição: nº de alergias por paciente</figcaption><div class="canvas"><canvas id="g-dist-alergias"></canvas></div></figure>
+            <figure class="cartao largo" data-chave="serieMensal">
+                <figcaption>Consultas por mês <small>tendência temporal · primeira consulta x retorno </small></figcaption>
+                <p class="nota" id="nota-tendencia"></p>
+                <div class="canvas"><canvas id="g-serie"></canvas></div>
+            </figure>
+            <figure class="cartao" data-chave="porEspecialidade">
+                <figcaption>Consultas por especialidade <small>frequência </small></figcaption>
+                <div class="canvas alto"><canvas id="g-especialidade"></canvas></div>
+            </figure> 
+            <figure class="cartao" data-chave="polifarmacia">
+                <figcaption>Pacientes atendidos por situação de medicação <small><code></code></small></figcaption>
+                <div class="canvas alto"><canvas id="g-polifarmacia"></canvas></div>
+            </figure>
+            <figure class="cartao" data-chave="estatisticas">
+                <figcaption>Distribuição de frequência
+                    <select id="f-variavel" class="mini"></select>
+                    <small>histograma · média, mediana, moda</small>
+                </figcaption>
+                <div class="chips" id="chips-estat"></div>
+                <div class="canvas"><canvas id="g-histograma"></canvas></div>
+            </figure>
+            <figure class="cartao" data-chave="top">
+                <figcaption>Top 10
+                    <span class="alternar" id="alternar-top">
+                        <button type="button" data-top="topMedicamentos" class="ativo">Medicamentos</button>
+                        <button type="button" data-top="topExames">Exames</button>
+                    </span>
+                    <small>itens mais prescritos / solicitados no filtro</small>
+                </figcaption>
+                <div class="canvas"><canvas id="g-top"></canvas></div>
+            </figure>
+            <figure class="cartao" data-chave="radar">
+                <figcaption>Perfil das 3 especialidades com mais consultas <small>radar · cada eixo em % do maior valor entre as especialidades</small></figcaption>
+                <div class="canvas"><canvas id="g-radar"></canvas></div>
+            </figure>
+            <figure class="cartao" data-chave="dispersao">
+                <figcaption>Correlação: consultas x medicamentos distintos por paciente </figcaption>
+                <p class="nota" id="nota-correlacao"></p>
+                <div class="canvas"><canvas id="g-dispersao"></canvas></div>
+            </figure>
+            <figure class="cartao" data-chave="diaSemana">
+                <figcaption>Consultas por dia da semana <small>comparativo de frequência</small></figcaption>
+                <div class="canvas"><canvas id="g-semana"></canvas></div>
+            </figure>
         </div>
     </section>
 
+    <!-- ========================= CONSULTAS E VISÕES ========================== -->
+    <section id="aba-relatorios" class="aba">
+        <header class="topo">
+            <div>
+            </div>
+        </header>
+        <div class="relatorios">
+            <div id="lista-relatorios"></div>
+            <div id="resultado-relatorio" class="cartao vazio">Selecione uma consulta à esquerda.</div>
+        </div>
+    </section>
+
+    <!-- ===================== Regras ====================== -->
+    <section id="aba-regras" class="aba">
+        <header class="topo">
+            <div>
+                <h1>Regras</h1>
+            </div>
+        </header>
+        <div class="regras">
+            <article class="cartao">
+                <h2>fn_classificar_polifarmacia(cpf)</h2>
+                <p class="ajuda">Classifica cada paciente pelo número de medicamentos distintos já prescritos</p>
+                <div class="linha-form">
+                    <label>Classificação <select id="r-classe"><option value="">Todas</option>
+                        <option>Polifarmácia — revisar medicação</option><option>Atenção — acompanhar</option>
+                        <option>Regular</option><option>Sem medicação prescrita</option></select></label>
+                </div>
+                <div class="dois">
+                    <div class="canvas medio"><canvas id="g-r-polifarmacia"></canvas></div>
+                    <div class="tabela-wrap baixa"><table id="r-tabela-polifarmacia"></table></div>
+                </div>
+            </article>
+
+            <article class="cartao">
+                <h2>fn_paciente_alergico_a_medicamento(cpf, medicamento)</h2>
+                <p class="ajuda">Devolve 1 se o paciente tem alergia ao medicamento ou à classe dele (ex.: “Anti-inflamatórios” → Diclofenaco).</p>
+                <div class="linha-form">
+                    <label>Paciente <select id="r-paciente"></select></label>
+                    <label>Medicamento <select id="r-medicamento"></select></label>
+                    <button class="primario" id="r-verificar">Verificar</button>
+                </div>
+                <div id="r-resultado-alergia"></div>
+                <h3>Auditoria: itens de receita já gravados que a função acusa</h3>
+            </article>
+
+            <article class="cartao">
+                <h2>sp_atualizar_convenio_paciente(cpf, convênio)</h2>
+                <p class="ajuda">Valida paciente e convênio, faz o UPDATE e devolve o cadastro. O UPDATE dispara o trigger de log.</p>
+                <div class="linha-form">
+                    <label>Paciente <select id="r-paciente-conv"></select></label>
+                    <label>Novo convênio <select id="r-convenio"></select></label>
+                    <button class="primario" id="r-trocar">Executar CALL</button>
+                </div>
+                <div id="r-resultado-convenio"></div>
+            </article>
+
+            <article class="cartao">
+                <h2>sp_agendar_pacientes_sem_consulta(OUT total)</h2>
+                <p class="ajuda">Percorre, com cursor, os pacientes que nunca foram atendidos e marca uma consulta com o médico menos carregado naquele momento.</p>
+                <h3>Pacientes sem consulta agora</h3>
+                <div class="tabela-wrap baixa"><table id="r-tabela-sem-consulta"></table></div>
+                <div class="linha-form">
+                    <button class="btn" id="r-simular">Simular (ROLLBACK)</button>
+                    <button class="primario" id="r-agendar">Executar e confirmar (COMMIT)</button>
+                </div>
+                <div id="r-resultado-agenda"></div>
+            </article>
+
+            <article class="cartao">
+                <h2>trg_contem_bloqueia_alergia</h2>
+                <p class="ajuda">Antes de gravar um item de receita, usa a função de alergia e recusa a prescrição perigosa.
+                    Aqui o teste roda numa transação desfeita; na aba <b>Consultas</b> a prescrição é real.</p>
+                <div class="linha-form">
+                    <label>Consulta (com receita) <select id="r-consulta-trig"></select></label>
+                    <label>Medicamento <select id="r-medicamento-trig"></select></label>
+                    <button class="primario" id="r-testar-trig">Tentar inserir</button>
+                </div>
+                <div id="r-resultado-trigger"></div>
+            </article>
+
+            <article class="cartao">
+                <h2>trg_paciente_log_convenio</h2>
+                <p class="ajuda">Toda troca de convênio (pelo procedimento acima ou editando um paciente) gera uma linha em <code>log_auditoria</code>.</p>
+                <div class="tabela-wrap baixa"><table id="r-tabela-log"></table></div>
+            </article>
+
+            <article class="cartao">
+                <h2>Código gravado no servidor</h2>
+                <div id="r-objetos"></div>
+            </article>
+        </div>
+    </section>
+
+    <!-- ================================ CRUDs ================================ -->
     <section id="aba-pacientes" class="aba">
         <header class="topo">
             <div>
                 <h1>Pacientes</h1>
-                <p>Tabelas <code>pessoa</code> + <code>paciente</code> + <code>telefone</code>. O nº do prontuário é gerado por AUTO_INCREMENT.</p>
             </div>
             <button class="primario" data-novo="pacientes">+ Novo paciente</button>
         </header>
@@ -60,7 +227,6 @@
         <header class="topo">
             <div>
                 <h1>Médicos</h1>
-                <p>Tabelas <code>pessoa</code> + <code>medico</code>. Especialidade vazia usa o DEFAULT “Clínica Geral”.</p>
             </div>
             <button class="primario" data-novo="medicos">+ Novo médico</button>
         </header>
@@ -68,11 +234,25 @@
         <div class="tabela-wrap"><table id="tabela-medicos"></table></div>
     </section>
 
+    <section id="aba-consultas" class="aba">
+        <header class="topo">
+            <div>
+                <h1>Consultas</h1>
+            </div>
+            <button class="primario" data-novo="consultas">+ Nova consulta</button>
+        </header>
+        <div class="linha-form">
+            <input class="busca" data-busca="consultas" placeholder="Buscar consulta...">
+            <label>De <input type="date" id="c-inicio"></label>
+            <label>Até <input type="date" id="c-fim"></label>
+        </div>
+        <div class="tabela-wrap"><table id="tabela-consultas"></table></div>
+    </section>
+
     <section id="aba-convenios" class="aba">
         <header class="topo">
             <div>
                 <h1>Convênios</h1>
-                <p>Excluir um convênio deixa seus pacientes como particulares (<code>ON DELETE SET NULL</code>); alterar o código propaga para os pacientes (<code>ON UPDATE CASCADE</code>).</p>
             </div>
             <button class="primario" data-novo="convenios">+ Novo convênio</button>
         </header>
@@ -80,17 +260,26 @@
         <div class="tabela-wrap"><table id="tabela-convenios"></table></div>
     </section>
 
-    <section id="aba-relatorios" class="aba">
+    <section id="aba-medicamentos" class="aba">
         <header class="topo">
             <div>
-                <h1>Consultas SQL</h1>
-                <p>Escolha uma consulta para executá-la no MySQL e ver o SQL e o resultado.</p>
+                <h1>Medicamentos</h1>
             </div>
+            <button class="primario" data-novo="medicamentos">+ Novo medicamento</button>
         </header>
-        <div class="relatorios">
-            <ol id="lista-relatorios"></ol>
-            <div id="resultado-relatorio" class="cartao vazio">Selecione uma consulta à esquerda.</div>
-        </div>
+        <input class="busca" data-busca="medicamentos" placeholder="Buscar medicamento...">
+        <div class="tabela-wrap"><table id="tabela-medicamentos"></table></div>
+    </section>
+
+    <section id="aba-exames" class="aba">
+        <header class="topo">
+            <div>
+                <h1>Exames</h1>
+            </div>
+            <button class="primario" data-novo="exames">+ Novo exame</button>
+        </header>
+        <input class="busca" data-busca="exames" placeholder="Buscar exame...">
+        <div class="tabela-wrap"><table id="tabela-exames"></table></div>
     </section>
 </main>
 
@@ -104,6 +293,17 @@
             <button type="submit" class="primario">Salvar</button>
         </div>
     </form>
+</dialog>
+
+<dialog id="painel" class="largo">
+    <div class="painel-conteudo">
+        <div class="painel-topo">
+            <h2 id="painel-titulo"></h2>
+            <button type="button" class="btn" id="painel-fechar">Fechar</button>
+        </div>
+        <div id="painel-corpo"></div>
+        <p class="erro" id="painel-erro"></p>
+    </div>
 </dialog>
 
 <div id="aviso" class="aviso"></div>
