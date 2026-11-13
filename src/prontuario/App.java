@@ -15,10 +15,14 @@ import java.util.Map;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import prontuario.dao.AlergiaDAO;
+import prontuario.dao.CatalogoDAO;
+import prontuario.dao.ConsultaDAO;
 import prontuario.dao.ConvenioDAO;
 import prontuario.dao.DashboardDAO;
 import prontuario.dao.MedicoDAO;
 import prontuario.dao.PacienteDAO;
+import prontuario.dao.RegrasDAO;
 import prontuario.dao.RelatorioDAO;
 
 public class App {
@@ -30,6 +34,11 @@ public class App {
     private final ConvenioDAO convenios = new ConvenioDAO();
     private final RelatorioDAO relatorios = new RelatorioDAO();
     private final DashboardDAO dashboard = new DashboardDAO();
+    private final ConsultaDAO consultas = new ConsultaDAO();
+    private final CatalogoDAO medicamentos = CatalogoDAO.medicamentos();
+    private final CatalogoDAO exames = CatalogoDAO.exames();
+    private final AlergiaDAO alergias = new AlergiaDAO();
+    private final RegrasDAO regras = new RegrasDAO();
 
     public static void main(String[] args) throws Exception {
         Database.carregarConfiguracao();
@@ -46,19 +55,33 @@ public class App {
         System.out.println("Aplicação rodando em http://localhost:" + porta);
     }
 
+    /**
+     * Rotas: /api/{recurso}/{id}/{sub}/{subId}
+     * GET com filtros usa a query string (?inicio=...&fim=...); POST/PUT/DELETE usam formulário no corpo.
+     */
     private void tratarApi(HttpExchange ex) throws IOException {
         try {
-            String[] partes = ex.getRequestURI().getPath().replaceAll("/+$", "").split("/");
+            String[] partes = ex.getRequestURI().getRawPath().replaceAll("/+$", "").split("/");
             String recurso = partes.length > 2 ? partes[2] : "";
-            String id = partes.length > 3 ? URLDecoder.decode(partes[3], StandardCharsets.UTF_8) : null;
+            String id = parte(partes, 3);
+            String sub = parte(partes, 4);
+            String subId = parte(partes, 5);
             String metodo = ex.getRequestMethod();
+            Map<String, String> query = lerPares(ex.getRequestURI().getRawQuery());
+            Map<String, String> form = lerFormulario(ex);
 
             Object resposta = switch (recurso) {
-                case "dashboard" -> dashboard.carregar();
-                case "relatorios" -> id == null ? relatorios.listar() : relatorios.executar(Integer.parseInt(id));
-                case "pacientes" -> pacientes(metodo, id, lerFormulario(ex));
-                case "medicos" -> medicos(metodo, id, lerFormulario(ex));
-                case "convenios" -> convenios(metodo, id, lerFormulario(ex));
+                case "dashboard" -> "opcoes".equals(id) ? dashboard.opcoes() : dashboard.carregar(query);
+                case "relatorios" -> id == null ? relatorios.listar() : relatorios.executar(id, query);
+                case "pacientes" -> "alergias".equals(sub)
+                        ? alergias(metodo, id, subId, form)
+                        : pacientes(metodo, id, form);
+                case "medicos" -> medicos(metodo, id, form);
+                case "convenios" -> convenios(metodo, id, form);
+                case "consultas" -> consultas(metodo, id, sub, subId, query, form);
+                case "medicamentos" -> catalogo(medicamentos, "Medicamento", metodo, id, form);
+                case "exames" -> catalogo(exames, "Exame", metodo, id, form);
+                case "regras" -> regras(metodo, id, query, form);
                 default -> throw new NaoEncontrado("Recurso não encontrado: " + recurso);
             };
             enviarJson(ex, 200, resposta);
@@ -66,11 +89,144 @@ public class App {
             enviarJson(ex, 404, Map.of("erro", e.getMessage()));
         } catch (SQLException e) {
             enviarJson(ex, 400, Map.of("erro", mensagemAmigavel(e), "detalhe", e.getMessage()));
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | java.time.format.DateTimeParseException e) {
             enviarJson(ex, 400, Map.of("erro", e.getMessage()));
         } catch (Exception e) {
             e.printStackTrace();
             enviarJson(ex, 500, Map.of("erro", "Erro interno: " + e.getMessage()));
+        }
+    }
+
+    private static String parte(String[] partes, int i) {
+        return partes.length > i ? URLDecoder.decode(partes[i], StandardCharsets.UTF_8) : null;
+    }
+
+    private Object consultas(String metodo, String id, String sub, String subId,
+                             Map<String, String> q, Map<String, String> f) throws SQLException {
+        if (sub != null) {
+            int codigo = Integer.parseInt(id);
+            switch (sub + ":" + metodo) {
+                case "receita:POST" -> {
+                    consultas.criarReceita(codigo, opcional(f, "nome"));
+                    return Map.of("mensagem", "Receita criada");
+                }
+                case "receita:DELETE" -> {
+                    verificarAfetadas(consultas.excluirReceita(codigo));
+                    return Map.of("mensagem", "Receita excluída (itens removidos em cascata)");
+                }
+                case "medicamentos:POST" -> {
+                    consultas.prescrever(codigo, Integer.parseInt(obrigatorio(f, "codigo_medicamento")));
+                    return Map.of("mensagem", "Medicamento incluído na receita");
+                }
+                case "medicamentos:DELETE" -> {
+                    verificarAfetadas(consultas.removerMedicamento(codigo, Integer.parseInt(subId)));
+                    return Map.of("mensagem", "Medicamento removido da receita");
+                }
+                case "exames:POST" -> {
+                    consultas.solicitarExame(codigo, Integer.parseInt(obrigatorio(f, "codigo_exame")));
+                    return Map.of("mensagem", "Exame solicitado");
+                }
+                case "exames:DELETE" -> {
+                    verificarAfetadas(consultas.removerExame(codigo, Integer.parseInt(subId)));
+                    return Map.of("mensagem", "Exame removido");
+                }
+                default -> throw new NaoEncontrado("Rota não encontrada: " + sub);
+            }
+        }
+        switch (metodo) {
+            case "GET":
+                if ("opcoes".equals(id)) {
+                    return consultas.opcoes();
+                }
+                if (id != null) {
+                    Map<String, Object> d = consultas.detalhar(Integer.parseInt(id));
+                    if (d == null) {
+                        throw new NaoEncontrado("Consulta não encontrada");
+                    }
+                    return d;
+                }
+                return consultas.listar(opcional(q, "inicio"), opcional(q, "fim"));
+            case "POST":
+                int codigo = consultas.inserir(obrigatorio(f, "cpf_paciente"), obrigatorio(f, "cpf_medico"),
+                        opcional(f, "data_consulta"), inteiroOpcional(f, "retorno_de"), opcional(f, "nome_receita"));
+                return Map.of("mensagem", "Consulta " + codigo + " cadastrada", "codigo", codigo);
+            case "PUT":
+                verificarAfetadas(consultas.alterar(Integer.parseInt(id), obrigatorio(f, "cpf_paciente"),
+                        obrigatorio(f, "cpf_medico"), opcional(f, "data_consulta")));
+                return Map.of("mensagem", "Consulta alterada");
+            case "DELETE":
+                verificarAfetadas(consultas.excluir(Integer.parseInt(id)));
+                return Map.of("mensagem", "Consulta excluída (receita, itens, exames e retornos em cascata)");
+            default:
+                throw new IllegalArgumentException("Método não suportado: " + metodo);
+        }
+    }
+
+    private Object catalogo(CatalogoDAO dao, String nome, String metodo, String codigo, Map<String, String> f)
+            throws SQLException {
+        switch (metodo) {
+            case "GET":
+                return dao.listar();
+            case "POST":
+                dao.inserir(obrigatorio(f, "nome"));
+                return Map.of("mensagem", nome + " cadastrado");
+            case "PUT":
+                verificarAfetadas(dao.alterar(Integer.parseInt(codigo),
+                        Integer.parseInt(obrigatorio(f, "codigo")), obrigatorio(f, "nome")));
+                return Map.of("mensagem", nome + " alterado");
+            case "DELETE":
+                verificarAfetadas(dao.excluir(Integer.parseInt(codigo)));
+                return Map.of("mensagem", nome + " excluído");
+            default:
+                throw new IllegalArgumentException("Método não suportado: " + metodo);
+        }
+    }
+
+    private Object alergias(String metodo, String cpf, String alergia, Map<String, String> f) throws SQLException {
+        switch (metodo) {
+            case "GET":
+                return alergias.listar(cpf);
+            case "POST":
+                alergias.inserir(cpf, obrigatorio(f, "alergia"));
+                return Map.of("mensagem", "Alergia registrada");
+            case "PUT":
+                verificarAfetadas(alergias.alterar(cpf, alergia, obrigatorio(f, "alergia")));
+                return Map.of("mensagem", "Alergia alterada");
+            case "DELETE":
+                verificarAfetadas(alergias.excluir(cpf, alergia));
+                return Map.of("mensagem", "Alergia removida");
+            default:
+                throw new IllegalArgumentException("Método não suportado: " + metodo);
+        }
+    }
+
+    /** Etapa 05: funções, procedimentos e triggers. */
+    private Object regras(String metodo, String acao, Map<String, String> q, Map<String, String> f)
+            throws SQLException {
+        switch (metodo + ":" + acao) {
+            case "GET:objetos":
+                return regras.objetos();
+            case "GET:polifarmacia":
+                return regras.polifarmacia(opcional(q, "classe"));
+            case "GET:alergia":
+                return regras.verificarAlergia(obrigatorio(q, "cpf"), Integer.parseInt(obrigatorio(q, "medicamento")));
+            case "GET:conflitos":
+                return regras.conflitosGravados();
+            case "POST:convenio":
+                return regras.atualizarConvenio(obrigatorio(f, "cpf"), inteiroOpcional(f, "codigo_convenio"));
+            case "GET:sem-consulta":
+                return regras.pacientesSemConsulta();
+            case "POST:agendar":
+                return regras.agendar("true".equals(f.get("confirmar")));
+            case "GET:consultas-com-receita":
+                return regras.consultasComReceita();
+            case "POST:testar-trigger":
+                return regras.testarTriggerAlergia(Integer.parseInt(obrigatorio(f, "codigo_consulta")),
+                        Integer.parseInt(obrigatorio(f, "codigo_medicamento")));
+            case "GET:log":
+                return regras.log();
+            default:
+                throw new NaoEncontrado("Ação não encontrada: " + acao);
         }
     }
 
@@ -137,10 +293,12 @@ public class App {
     private static String mensagemAmigavel(SQLException e) {
         return switch (e.getErrorCode()) {
             case 1062 -> "Registro duplicado: já existe um cadastro com esse valor único (CPF, CRM, nome...).";
-            case 1451 -> "Não é possível excluir/alterar: existem registros que dependem deste (ex.: consultas).";
+            case 1451 -> "Não é possível excluir/alterar: existem registros que dependem deste (ex.: consultas ou receitas que o usam).";
             case 1452 -> "Referência inválida: o registro relacionado não existe.";
             case 3819 -> "Valor inválido: violou a restrição " + restricao(e.getMessage()) + ".";
             case 1406 -> "Valor maior do que o tamanho permitido para o campo.";
+            case 1048 -> "Campo obrigatório não informado: " + e.getMessage();
+            case 1292 -> "Valor inválido (data ou número): " + e.getMessage();
             case 1644 -> e.getMessage();
             case 0 -> "Não foi possível conectar ao banco de dados: " + e.getMessage();
             default -> "Erro no banco de dados: " + e.getMessage();
@@ -178,8 +336,14 @@ public class App {
     }
 
     private static Map<String, String> lerFormulario(HttpExchange ex) throws IOException {
-        String corpo = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        return lerPares(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+    }
+
+    private static Map<String, String> lerPares(String corpo) {
         Map<String, String> campos = new HashMap<>();
+        if (corpo == null) {
+            return campos;
+        }
         for (String par : corpo.split("&")) {
             if (par.isEmpty()) {
                 continue;

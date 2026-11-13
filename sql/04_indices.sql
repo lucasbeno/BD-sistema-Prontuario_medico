@@ -1,5 +1,4 @@
 USE prontuario_medico;
-.
 CREATE INDEX idx_alergia_descricao
     ON alergia (alergia);
 
